@@ -20,6 +20,9 @@ if (settings == null)
     throw new Exception("BotSettings не завантажився. Перевір appsettings.json");
 }
 
+// ==========================================
+// ЗАВАНТАЖЕННЯ ПРОМПТІВ
+// ==========================================
 string promptsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts");
 string promptFilePath = Path.Combine(promptsFolder, "SystemPrompt.txt");
 
@@ -68,9 +71,58 @@ var me = await botClient.GetMe();
 Console.WriteLine($"Бот @{me.Username} запущений");
 Console.ReadLine();
 cts.Cancel();
+
+//==========================================================================================================
 async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
 {
-if (update.Type != UpdateType.Message || update.Message == null) 
+    if (update.Type == UpdateType.CallbackQuery && update.CallbackQuery != null)
+    {
+        var callbackQuery = update.CallbackQuery;
+        var chatId = callbackQuery.Message!.Chat.Id;
+        var buttonData = callbackQuery.Data;
+
+        await bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+
+        if (string.IsNullOrEmpty(buttonData) || !buttonData.Contains(":")) 
+            return;
+
+        var parts = buttonData.Split(':', 2);
+        var action = parts[0];
+        var targetWord = parts[1];
+
+        try
+        {
+            await bot.SendChatAction(chatId, ChatAction.Typing, cancellationToken: cancellationToken);
+            string promptForAi = "";
+
+            if (action == "sen")
+            {
+                promptForAi = string.Format(promptSenTemplate, targetWord);
+            }
+            else if (action == "syn")
+            {
+                promptForAi = string.Format(promptSynTemplate, targetWord);
+            }
+            else if (action == "mor")
+            {
+                promptForAi = string.Format(promptMorTemplate, targetWord);
+            }
+
+            if (!string.IsNullOrEmpty(promptForAi))
+            {
+                var aiResponse = await openAiService.GetResponseAsync(promptForAi);
+                await bot.SendMessage(chatId, aiResponse, cancellationToken: cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Помилка Callback: {ex.Message}");
+            await bot.SendMessage(chatId, "Сталася помилка при обробці кнопки.", cancellationToken: cancellationToken);
+        }
+        return;
+    }
+
+    if (update.Type != UpdateType.Message || update.Message == null) 
         return;
         
     var message = update.Message;
@@ -120,7 +172,44 @@ if (update.Type != UpdateType.Message || update.Message == null)
     try
     {
         await bot.SendChatAction(currentChatId, ChatAction.Typing, cancellationToken: cancellationToken);
+
         var response = await openAiService.GetResponseAsync(text);
+
+        bool isRefusal = response.Contains("Це не схоже на термін");
+            
+        if (isRefusal)
+        {
+            await bot.SendMessage(
+                chatId: currentChatId,
+                text: response,
+                parseMode: ParseMode.Markdown,
+                cancellationToken: cancellationToken
+            );
+        }
+        else
+        {
+            string safeTextForButton = text.Length > 40 ? text.Substring(0, 40) : text;
+
+            var inlineKeyboard = new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📝 Речення", $"sen:{safeTextForButton}"),
+                    InlineKeyboardButton.WithCallbackData("🔄 Синоніми", $"syn:{safeTextForButton}")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("💡 Додаткова інформація", $"mor:{safeTextForButton}")
+                }
+            });
+
+            await bot.SendMessage(
+                chatId: currentChatId,
+                text: response,
+                replyMarkup: inlineKeyboard,
+                cancellationToken: cancellationToken
+            );
+        }
     }
     catch (Exception ex)
     {
@@ -128,7 +217,9 @@ if (update.Type != UpdateType.Message || update.Message == null)
         await bot.SendMessage(currentChatId, "Сталася помилка при обробці запиту.", cancellationToken: cancellationToken);
     }
 }
+
 Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
 {
-    
+    Console.WriteLine(exception.Message);
+    return Task.CompletedTask;
 }
