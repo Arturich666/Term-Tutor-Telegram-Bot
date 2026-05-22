@@ -20,9 +20,6 @@ if (settings == null)
     throw new Exception("BotSettings не завантажився. Перевір appsettings.json");
 }
 
-// ==========================================
-// ЗАВАНТАЖЕННЯ ПРОМПТІВ
-// ==========================================
 string promptsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts");
 string promptFilePath = Path.Combine(promptsFolder, "SystemPrompt.txt");
 
