@@ -70,7 +70,63 @@ Console.ReadLine();
 cts.Cancel();
 async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
 {
+if (update.Type != UpdateType.Message || update.Message == null) 
+        return;
+        
+    var message = update.Message;
+    var currentChatId = message.Chat.Id;
 
+    if (message.Type != MessageType.Text)
+    {
+        await bot.SendMessage(currentChatId, "Я працюю лише з текстовими повідомленнями.", cancellationToken: cancellationToken);
+        return;
+    }
+
+    var text = message.Text?.Trim();
+    if (string.IsNullOrWhiteSpace(text)) 
+        return;
+
+    if (text == "/start")
+    {
+        string welcomeText = 
+            "Привіт! Я *Term Tutor* 🤖 - твій розумний помічник для вивчення нових слів та понять.\n\n" +
+            "Ось що я вмію:\n" +
+            "📖 *Пояснювати значення* - надішли мені будь-який термін чи слово, і я дам коротке та зрозуміле визначення.\n\n" +
+            "Після кожного пояснення я запропоную тобі зручні кнопки:\n" +
+            "📝 *Речення* - складу цікаві приклади використання слова.\n" +
+            "🔄 *Синоніми* - підберу близькі за значенням слова.\n" +
+            "💡 *Факти* - розповім коротку етимологію або цікавинку про слово.\n\n" +
+            "Напиши мені перше слово, і почнемо! 👇";
+
+        await bot.SendMessage(
+            chatId: currentChatId,
+            text: welcomeText,
+            parseMode: ParseMode.Markdown,
+            cancellationToken: cancellationToken
+        );
+        return;
+    }
+    if (text.Length > 30 || text.Split(' ').Length > 3)
+    {
+        await bot.SendMessage(
+            chatId: currentChatId, 
+            text: "Будь ласка, надсилай мені **лише сам термін** (максимум 2-3 слова).\n\nЯкщо хочеш отримати приклад речення, синоніми чи факти - використовуй спеціальні кнопки, які з'являться після мого пояснення!", 
+            parseMode: ParseMode.Markdown,
+            cancellationToken: cancellationToken
+        );
+        return;
+    }
+
+    try
+    {
+        await bot.SendChatAction(currentChatId, ChatAction.Typing, cancellationToken: cancellationToken);
+        var response = await openAiService.GetResponseAsync(text);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Помилка: {ex.Message}");
+        await bot.SendMessage(currentChatId, "Сталася помилка при обробці запиту.", cancellationToken: cancellationToken);
+    }
 }
 Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
 {
